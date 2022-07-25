@@ -279,7 +279,11 @@ Success! The configuration is valid.
 main.tf
 ```
 
-`terraform apply --auto-approve`
+## Запуск терраформа
+### Секретную переменную `var.IAM_token` передаем при запуске через опцию командной строки `-var`
+```bash
+terraform apply --auto-approve -var="var.IAM_token=t1.9euelZqNyY2Jm4yLmZyanZHNlZ6bk-3rnpWajZfNjsiPkpOKnJuVyJSSmp7l9PdVBAdp-e8PcwnE3fT3FTMEafnvD3MJxA.Gm5_34wMdV_syBJUyFd4WLI6LY5KH2RV231DhSlWrHMTAyen77Fy641tqmefBABcxLd3vvuQ022_6E4gcRHpBg"
+```  
 ```console
 Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
   + create
@@ -367,18 +371,18 @@ Changes to Outputs:
 yandex_compute_instance.vm-1: Creating...
 yandex_compute_instance.vm-1: Still creating... [10s elapsed]
 yandex_compute_instance.vm-1: Still creating... [20s elapsed]
-yandex_compute_instance.vm-1: Creation complete after 22s [id=fhm1he3tlquolo4ei9fg]
+yandex_compute_instance.vm-1: Creation complete after 23s [id=fhmoo4tcm1t350ohbdis]
 
 Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
 
 Outputs:
 
-external_ip_address = "51.250.81.23"
-internal_ip_address = "10.128.0.130"
+external_ip_address = "51.250.73.117"
+internal_ip_address = "10.128.0.69"
 ```
 
-
-`ssh ansible@51.250.81.23`
+## Проверим созданную виртуалку
+`ssh ansible@51.250.73.117`
 ```console
 Welcome to Ubuntu 20.04.3 LTS (GNU/Linux 5.4.0-42-generic x86_64)
 
@@ -406,9 +410,13 @@ ansible
 ansible@fhm1he3tlquolo4ei9fg:/home$
 ```
 
-`terraform destroy --auto-approve`
+## Удалим виртуалку
+### Секретную переменную также передаем в опции командной строки при запуке команды
+```bash
+terraform destroy --auto-approve -var="IAM_token=t1.9euelZqNyY2Jm4yLmZyanZHNlZ6bk-3rnpWajZfNjsiPkpOKnJuVyJSSmp7l9PdVBAdp-e8PcwnE3fT3FTMEafnvD3MJxA.Gm5_34wMdV_syBJUyFd4WLI6LY5KH2RV231DhSlWrHMTAyen77Fy641tqmefBABcxLd3vvuQ022_6E4gcRHpBg"
+```
 ```console
-yandex_compute_instance.vm-1: Refreshing state... [id=fhm1he3tlquolo4ei9fg]
+yandex_compute_instance.vm-1: Refreshing state... [id=fhmoo4tcm1t350ohbdis]
 
 Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
   - destroy
@@ -417,11 +425,11 @@ Terraform will perform the following actions:
 
   # yandex_compute_instance.vm-1 will be destroyed
   - resource "yandex_compute_instance" "vm-1" {
-      - created_at                = "2022-07-25T10:08:32Z" -> null
+      - created_at                = "2022-07-25T12:44:06Z" -> null
       - folder_id                 = "b1ggoah947u3kc4j9m7i" -> null
-      - fqdn                      = "fhm1he3tlquolo4ei9fg.auto.internal" -> null
-      - hostname                  = "fhm1he3tlquolo4ei9fg" -> null
-      - id                        = "fhm1he3tlquolo4ei9fg" -> null
+      - fqdn                      = "fhmoo4tcm1t350ohbdis.auto.internal" -> null
+      - hostname                  = "fhmoo4tcm1t350ohbdis" -> null
+      - id                        = "fhmoo4tcm1t350ohbdis" -> null
       - labels                    = {} -> null
       - metadata                  = {
           - "serial-port-enable" = "1"
@@ -445,8 +453,8 @@ Terraform will perform the following actions:
 
       - boot_disk {
           - auto_delete = true -> null
-          - device_name = "fhm42abfra6tftrh1tvs" -> null
-          - disk_id     = "fhm42abfra6tftrh1tvs" -> null
+          - device_name = "fhmfrkc9hsnnpeepvhs6" -> null
+          - disk_id     = "fhmfrkc9hsnnpeepvhs6" -> null
           - mode        = "READ_WRITE" -> null
 
           - initialize_params {
@@ -458,12 +466,12 @@ Terraform will perform the following actions:
 
       - network_interface {
           - index              = 0 -> null
-          - ip_address         = "10.128.0.130" -> null
+          - ip_address         = "10.128.0.69" -> null
           - ipv4               = true -> null
           - ipv6               = false -> null
-          - mac_address        = "d0:0d:18:b8:7d:ae" -> null
+          - mac_address        = "d0:0d:18:c1:3a:cb" -> null
           - nat                = true -> null
-          - nat_ip_address     = "51.250.81.23" -> null
+          - nat_ip_address     = "51.250.73.117" -> null
           - nat_ip_version     = "IPV4" -> null
           - security_group_ids = [] -> null
           - subnet_id          = "e9bq7u62i4q21jq25n5j" -> null
@@ -486,11 +494,11 @@ Terraform will perform the following actions:
 Plan: 0 to add, 0 to change, 1 to destroy.
 
 Changes to Outputs:
-  - external_ip_address = "51.250.81.23" -> null
-  - internal_ip_address = "10.128.0.130" -> null
-yandex_compute_instance.vm-1: Destroying... [id=fhm1he3tlquolo4ei9fg]
-yandex_compute_instance.vm-1: Still destroying... [id=fhm1he3tlquolo4ei9fg, 10s elapsed]
-yandex_compute_instance.vm-1: Destruction complete after 12s
+  - external_ip_address = "51.250.73.117" -> null
+  - internal_ip_address = "10.128.0.69" -> null
+yandex_compute_instance.vm-1: Destroying... [id=fhmoo4tcm1t350ohbdis]
+yandex_compute_instance.vm-1: Still destroying... [id=fhmoo4tcm1t350ohbdis, 10s elapsed]
+yandex_compute_instance.vm-1: Destruction complete after 13s
 
 Destroy complete! Resources: 1 destroyed.
 ```
