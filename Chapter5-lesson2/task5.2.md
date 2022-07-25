@@ -268,3 +268,229 @@ Failed to connect to https://changelogs.ubuntu.com/meta-release-lts. Check your 
 
 Last login: Fri Jul 22 14:01:30 2022 from 10.128.0.60
 ```
+
+`terraform validate`
+```console
+Success! The configuration is valid.
+```
+
+`terraform fmt`
+```console
+main.tf
+```
+
+`terraform apply --auto-approve`
+```console
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # yandex_compute_instance.vm-1 will be created
+  + resource "yandex_compute_instance" "vm-1" {
+      + created_at                = (known after apply)
+      + folder_id                 = (known after apply)
+      + fqdn                      = (known after apply)
+      + hostname                  = (known after apply)
+      + id                        = (known after apply)
+      + metadata                  = {
+          + "serial-port-enable" = "1"
+          + "user-data"          = <<-EOT
+                #cloud-config
+                users:
+                  - name: ansible
+                    groups: sudo
+                    shell: /bin/bash
+                    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+                    shell: /bin/bash
+                    ssh_authorized_keys:
+                      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCbe0dgBa3lFqSYyELOTj9uNFDD07u1rPHUyDI5VUmopPabU3EtyaOKNj+4ye/PUt2iv9Vu2WTbHVbj9SmJaApVI0GCHMY3NrXI+BUguSnKjtecpi4BSiJN6uUxmVHUNHbkWGuoOBX5oo+6fK8s5ne36QywL04HJmvtDQS9/wb1JUq0WOH8GR5kWHXvqtRs7vLzeVNH3BFYM+9tuNNBTVY3+AHs2vZH90S/EbwML4JttxwHgz/ZZ6CCCPrTGBZhroDNGL2dqhRGS01N+UHVUNO0nt8+CaGjwot43agboW3gEguMMjiHfFiNXgnCVEMJIGKJDqE2VGHo5AQ5gh+y6v+r student@fhmfcr5pto87rkevkqmj
+            EOT
+        }
+      + name                      = "chapter5-lesson2-dmitriy-pashkov-vm-1"
+      + network_acceleration_type = "standard"
+      + platform_id               = "standard-v1"
+      + service_account_id        = (known after apply)
+      + status                    = (known after apply)
+      + zone                      = (known after apply)
+
+      + boot_disk {
+          + auto_delete = true
+          + device_name = (known after apply)
+          + disk_id     = (known after apply)
+          + mode        = (known after apply)
+
+          + initialize_params {
+              + description = (known after apply)
+              + image_id    = "fd80qm01ah03dkqb14lc"
+              + name        = (known after apply)
+              + size        = (known after apply)
+              + snapshot_id = (known after apply)
+              + type        = "network-hdd"
+            }
+        }
+
+      + network_interface {
+          + index              = (known after apply)
+          + ip_address         = (known after apply)
+          + ipv4               = true
+          + ipv6               = (known after apply)
+          + ipv6_address       = (known after apply)
+          + mac_address        = (known after apply)
+          + nat                = true
+          + nat_ip_address     = (known after apply)
+          + nat_ip_version     = (known after apply)
+          + security_group_ids = (known after apply)
+          + subnet_id          = "e9bq7u62i4q21jq25n5j"
+        }
+
+      + placement_policy {
+          + placement_group_id = (known after apply)
+        }
+
+      + resources {
+          + core_fraction = 100
+          + cores         = 2
+          + memory        = 2
+        }
+
+      + scheduling_policy {
+          + preemptible = (known after apply)
+        }
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + external_ip_address = (known after apply)
+  + internal_ip_address = (known after apply)
+yandex_compute_instance.vm-1: Creating...
+yandex_compute_instance.vm-1: Still creating... [10s elapsed]
+yandex_compute_instance.vm-1: Still creating... [20s elapsed]
+yandex_compute_instance.vm-1: Creation complete after 22s [id=fhm1he3tlquolo4ei9fg]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+external_ip_address = "51.250.81.23"
+internal_ip_address = "10.128.0.130"
+```
+
+
+`ssh ansible@51.250.81.23`
+```console
+Welcome to Ubuntu 20.04.3 LTS (GNU/Linux 5.4.0-42-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+To run a command as administrator (user "root"), use "sudo <command>".
+See "man sudo_root" for details.
+
+ansible@fhm1he3tlquolo4ei9fg:~$ pwd
+/home/ansible
+ansible@fhm1he3tlquolo4ei9fg:~$ cd ..
+ansible@fhm1he3tlquolo4ei9fg:/home$ ls
+ansible
+ansible@fhm1he3tlquolo4ei9fg:/home$ whoami
+ansible
+ansible@fhm1he3tlquolo4ei9fg:/home$
+```
+
+`terraform destroy --auto-approve`
+```console
+yandex_compute_instance.vm-1: Refreshing state... [id=fhm1he3tlquolo4ei9fg]
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with the following symbols:
+  - destroy
+
+Terraform will perform the following actions:
+
+  # yandex_compute_instance.vm-1 will be destroyed
+  - resource "yandex_compute_instance" "vm-1" {
+      - created_at                = "2022-07-25T10:08:32Z" -> null
+      - folder_id                 = "b1ggoah947u3kc4j9m7i" -> null
+      - fqdn                      = "fhm1he3tlquolo4ei9fg.auto.internal" -> null
+      - hostname                  = "fhm1he3tlquolo4ei9fg" -> null
+      - id                        = "fhm1he3tlquolo4ei9fg" -> null
+      - labels                    = {} -> null
+      - metadata                  = {
+          - "serial-port-enable" = "1"
+          - "user-data"          = <<-EOT
+                #cloud-config
+                users:
+                  - name: ansible
+                    groups: sudo
+                    shell: /bin/bash
+                    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+                    shell: /bin/bash
+                    ssh_authorized_keys:
+                      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCbe0dgBa3lFqSYyELOTj9uNFDD07u1rPHUyDI5VUmopPabU3EtyaOKNj+4ye/PUt2iv9Vu2WTbHVbj9SmJaApVI0GCHMY3NrXI+BUguSnKjtecpi4BSiJN6uUxmVHUNHbkWGuoOBX5oo+6fK8s5ne36QywL04HJmvtDQS9/wb1JUq0WOH8GR5kWHXvqtRs7vLzeVNH3BFYM+9tuNNBTVY3+AHs2vZH90S/EbwML4JttxwHgz/ZZ6CCCPrTGBZhroDNGL2dqhRGS01N+UHVUNO0nt8+CaGjwot43agboW3gEguMMjiHfFiNXgnCVEMJIGKJDqE2VGHo5AQ5gh+y6v+r student@fhmfcr5pto87rkevkqmj
+            EOT
+        } -> null
+      - name                      = "chapter5-lesson2-dmitriy-pashkov-vm-1" -> null
+      - network_acceleration_type = "standard" -> null
+      - platform_id               = "standard-v1" -> null
+      - status                    = "running" -> null
+      - zone                      = "ru-central1-a" -> null
+
+      - boot_disk {
+          - auto_delete = true -> null
+          - device_name = "fhm42abfra6tftrh1tvs" -> null
+          - disk_id     = "fhm42abfra6tftrh1tvs" -> null
+          - mode        = "READ_WRITE" -> null
+
+          - initialize_params {
+              - image_id = "fd80qm01ah03dkqb14lc" -> null
+              - size     = 30 -> null
+              - type     = "network-hdd" -> null
+            }
+        }
+
+      - network_interface {
+          - index              = 0 -> null
+          - ip_address         = "10.128.0.130" -> null
+          - ipv4               = true -> null
+          - ipv6               = false -> null
+          - mac_address        = "d0:0d:18:b8:7d:ae" -> null
+          - nat                = true -> null
+          - nat_ip_address     = "51.250.81.23" -> null
+          - nat_ip_version     = "IPV4" -> null
+          - security_group_ids = [] -> null
+          - subnet_id          = "e9bq7u62i4q21jq25n5j" -> null
+        }
+
+      - placement_policy {}
+
+      - resources {
+          - core_fraction = 100 -> null
+          - cores         = 2 -> null
+          - gpus          = 0 -> null
+          - memory        = 2 -> null
+        }
+
+      - scheduling_policy {
+          - preemptible = false -> null
+        }
+    }
+
+Plan: 0 to add, 0 to change, 1 to destroy.
+
+Changes to Outputs:
+  - external_ip_address = "51.250.81.23" -> null
+  - internal_ip_address = "10.128.0.130" -> null
+yandex_compute_instance.vm-1: Destroying... [id=fhm1he3tlquolo4ei9fg]
+yandex_compute_instance.vm-1: Still destroying... [id=fhm1he3tlquolo4ei9fg, 10s elapsed]
+yandex_compute_instance.vm-1: Destruction complete after 12s
+
+Destroy complete! Resources: 1 destroyed.
+```
