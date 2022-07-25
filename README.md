@@ -1,1 +1,1 @@
-Yandex Practicum DevOps
+Yandex Practicum DevOps - 6 wave
