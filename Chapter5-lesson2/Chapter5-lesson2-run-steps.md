@@ -1,7 +1,51 @@
 # TASK 5.2
 
+# Установка terraform
+1. Скачать Terraform из [зеркала Yandex Cloud](https://hashicorp-releases.yandexcloud.net/terraform/)  
+2. Распаковать и копировать бинарник в `/usr/bin`, сделать его исполняемым `chmod +x /usr/bin/terraform`  
+3. Настроить провайдер Yandex Cloud в файле конфигурации Terraform CLI:
+`vi ~/.terraformrc`
+```bash
+provider_installation {
+  network_mirror {
+    url = "https://terraform-mirror.yandexcloud.net/"
+    include = ["registry.terraform.io/*/*"]
+  }
+  direct {
+    exclude = ["registry.terraform.io/*/*"]
+  }
+}
 
-# Аутентификация от имени федеративного пользователя (на винде)
+```
+4. Теперь в начале конфигурационного файла .tf можно подключать провайдера:
+```console
+terraform {
+  required_providers {
+    yandex = {
+      source = "yandex-cloud/yandex"
+    }
+  }
+  required_version = ">= 0.13"
+}
+
+provider "yandex" {
+  token     = "<OAuth>"
+  cloud_id  = "<идентификатор облака>"
+  folder_id = "<идентификатор каталога>"
+  zone      = "<зона доступности по умолчанию>"
+}
+```
+
+[Мануал](https://cloud.yandex.ru/docs/tutorials/infrastructure-management/terraform-quickstart)  
+
+5. Установить интерфейс командной строки Yandex Cloud (CLI) - ставить и на линуксе, и на винде (для авторизации в федеративный аккаунт)
+Ubuntu
+`curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash`  
+Powershell
+`iex (New-Object System.Net.WebClient).DownloadString('https://storage.yandexcloud.net/yandexcloud-yc/install.ps1')`
+
+# Получение IAM-токена для федеративного аккаунта
+## Аутентификация от имени федеративного пользователя (на винде в powershell)
 `yc init --federation-id=bpfpfctkh7focc85u9sq`
 ```console
 Welcome! This command will take you through the configuration process.
