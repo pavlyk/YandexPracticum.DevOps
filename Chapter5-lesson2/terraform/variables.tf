@@ -13,4 +13,5 @@ variable "folder_id" {
 variable "IAM_token" {
   type = string
   description = "Yandex IAM token"
+  sensitive = true
 }
