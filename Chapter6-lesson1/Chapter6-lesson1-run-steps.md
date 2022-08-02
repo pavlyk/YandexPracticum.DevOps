@@ -29,8 +29,7 @@ After=syslog.target
 [Service]
 Type=simple
 WorkingDirectory=/home/jarservice/
-ExecStart=/usr/bin/java -jar /home/jarservice/sausage-store.jar --server.port=8888 --spring.datasource.url=jdbc:postgresql://rc1b-rkh2fcafeufkyuw2.mdb.yandexcloud.net:6432/my_email --spring.datasource.username=my_email --s
-pring.datasource.password=password
+ExecStart=/usr/bin/java -jar /home/jarservice/sausage-store.jar --server.port=8888 --spring.datasource.url=jdbc:postgresql://rc1b-rkh2fcafeufkyuw2.mdb.yandexcloud.net:6432/my_email --spring.datasource.username=my_email --spring.datasource.password=password
 User=jarservice
 Restart=always
 RestartSec=5s
