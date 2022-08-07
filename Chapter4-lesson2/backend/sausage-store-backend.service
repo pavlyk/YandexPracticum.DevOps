@@ -1,0 +1,29 @@
+[Unit]
+Description=Sausage Store Backend Service
+After=syslog.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jarservice/
+ExecStart=/usr/bin/java -jar /home/jarservice/sausage-store.jar --server.port=8888
+User=jarservice
+Restart=always
+# time to sleep before restarting a service
+RestartSec=5s
+# how many restarts are allowed
+StartLimitBurst=5
+Environment="REPORT_PATH=/var/www-data/htdocs"
+Environment="LOG_PATH=/var/jarservice/"
+#Environment=REPORT_PATH=/log/reports
+#Environment=LOG_PATH=/log
+#StandardOutput=file:/log/out.log
+#ExecStart=/usr/bin/java \
+#-Dmyserver.basePath='/home/jarservice/' \
+#-Dmyserver.bindAddr='127.0.0.1' \
+#-Dmyserver.bindPort='8888' \
+#-Dmyserver.hostName='Sausage-store' \
+#-jar '/home/jarservice/sausage-store.jar'
+SuccessExitStatus=143
+
+[Install]
+WantedBy=multi-user.target

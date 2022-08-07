@@ -1,0 +1,98 @@
+cache:
+  paths:
+    - frontend/dist/frontend
+
+
+variables:
+  VERSION: 1.0.${CI_PIPELINE_ID}
+
+
+include:
+  - template: Security/SAST.gitlab-ci.yml
+
+
+stages:
+   - build
+   - test
+   - release
+   - deploy
+
+
+build-frontend-code-job:
+  stage: build
+  script:
+    - echo "ARTIFACT_JOB_ID=${CI_JOB_ID}" > CI_JOB_ID.txt
+    - cd frontend
+    - npm install
+    - npm run build
+    - cd ..
+    - mkdir sausage-store-${VERSION}  # создание директории, в которую копируются артефакты. Это нужно для организации удобной структуры архива
+    - mv frontend/dist/frontend sausage-store-${VERSION}/public_html # копирование собранного фронтэнда
+  artifacts:
+    paths:
+      - sausage-store-${VERSION}/public_html  # сохранение собранного фронтэнда как артефакт
+      - ${CI_PROJECT_DIR}/.m2/ # сохранение зависимостей для SAST 
+    reports:
+      dotenv: CI_JOB_ID.txt  
+  only:
+     changes:
+     - frontend/**/*
+
+
+sonarqube-frontend-sast:
+  stage: test
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - cd frontend
+    - >
+      sonar-scanner
+      -Dsonar.qualitygate.wait=true
+      -Dsonar.projectKey=${SONAR_PROJECT_KEY_FRONT}
+      -Dsonar.sources=. 
+      -Dsonar.host.url=${SONARQUBE_URL}
+      -Dsonar.login=${SONAR_LOGIN}
+  rules:
+    - changes:
+      - frontend/**/*
+
+
+upload-frontend-release:
+  stage: release
+  needs:
+    - build-frontend-code-job
+  script:
+     - tar czvf sausage-store-${VERSION}.tar.gz sausage-store-${VERSION}
+     - >
+       curl -v -u "${NEXUS_REPO_USER}:${NEXUS_REPO_PASS}" --upload-file sausage-store-${VERSION}.tar.gz ${NEXUS_REPO_URL}/sausage-store-pashkov-dmitriy-frontend/${VERSION}/sausage-store-${VERSION}.tar.gz
+  only:
+     changes:
+     - frontend/**/*
+
+
+deploy:
+  stage: deploy
+  before_script:
+    - 'command -v ssh-agent >/dev/null || ( apt-get update && apt-get install -y openssh-client)'
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 600 ~/.ssh
+    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - scp ./frontend/sausage-store-frontend.service ${DEV_USER}@${DEV_HOST}:/home/${DEV_USER}/sausage-store-frontend.service
+    - ssh ${DEV_USER}@${DEV_HOST} "export \"CURRENT_VERSION=${VERSION}\"; export \"VERSION=${VERSION}\"; export \"DEV_HOST=${DEV_HOST}\"; export \"NEXUS_REPO_URL=${NEXUS_REPO_URL}\"; export \"NEXUS_REPO_USER=${NEXUS_REPO_USER}\"; export \"NEXUS_REPO_PASS=${NEXUS_REPO_PASS}\"; setsid /bin/bash -s" < ./frontend/deploy.sh
+
+
+slack-message: # уведомляем в Slack
+  stage: .post
+  script:
+    - echo "Send notify to Slack"
+    - >
+      curl -X POST -H 'Content-type: application/json' --data "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Вышла новая версия сосисочной - ${VERSION}.\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Frontend:\n*<${NEXUS_REPO_URL}/sausage-store-pashkov-dmitriy-frontend/${VERSION}/sausage-store-${VERSION}.tar.gz|Download :arrow-down:>*\"}},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\":eyes: <@U03FRG969C6>\"}]}]}" https://hooks.slack.com/services/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
+  when: on_success
