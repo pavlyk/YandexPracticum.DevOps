@@ -1,0 +1,5 @@
+sudo groupadd alex
+for i in alex{0..9}; do sudo useradd $i -G alex; done
+sudo setfacl -R -L -m g:alex:rx,d:g:alex:rx /var/log/
+getfacl /var/log | sudo tee /opt/saved_rights
+ls -lS /var/www-data/htdocs | tee /tmp/size_log.txt
