@@ -49,7 +49,7 @@ echo export MINIO_ROOT_USER=login_here > .envrc
 echo export MINIO_ROOT_PASSWORD=password_here >> .envrc
 direnv allow .
 ```
-4. Run docker conpose  
+4. Run docker compose  
 `docker-compose up -d minio`  
 
 5. Go to browser  
