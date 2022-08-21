@@ -5,15 +5,12 @@
 ```bash
 #!/bin/bash
 
-#PSQL_ADMIN=sudmedru
-#PSQL_PASSWORD=Testusr1234
-#PSQL_HOST=6432
-#PSQL_PORT='rc1b-rkh2fcafeufkyuw2.mdb.yandexcloud.net'
-#PSQL_DBNAME=sudmedru
-
-#export PSQL_CONNECTION="postgresql://$PSQL_ADMIN:$PSQL_PASSWORD@$PSQL_HOST:$PSQL_PORT/$PSQL_DBNAME"
-export PSQL_CONNECTION="postgresql://sudmedru:Testusr1234@rc1b-rkh2fcafeufkyuw2.mdb.yandexcloud.net:6432/sudmedru"
-
+PSQL_ADMIN=sudmedru
+PSQL_PASSWORD=$PSQL_PASSWORD
+PSQL_HOST=6432
+PSQL_PORT='rc1b-rkh2fcafeufkyuw2.mdb.yandexcloud.net'
+PSQL_DBNAME=sudmedru
+export PSQL_CONNECTION="postgresql://$PSQL_ADMIN:$PSQL_PASSWORD@$PSQL_HOST:$PSQL_PORT/$PSQL_DBNAME"
 
 touch init.sql
 
