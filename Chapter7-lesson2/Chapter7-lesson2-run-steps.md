@@ -1,7 +1,7 @@
 ### 1. Create new object storage
-1. [Create bucket](https://cloud.yandex.com/en/docs/storage/quickstart#the-first-bucket) for storing data.
-2. [Upload files](https://cloud.yandex.com/en/docs/storage/quickstart#upload-files) to bucket.
-3. [Get links](https://cloud.yandex.com/en/docs/storage/quickstart#get-link) to download files.
+1.1. [Create bucket](https://cloud.yandex.com/en/docs/storage/quickstart#the-first-bucket) for storing data.  
+1.2. [Upload files](https://cloud.yandex.com/en/docs/storage/quickstart#upload-files) to bucket.  
+1.3. [Get links](https://cloud.yandex.com/en/docs/storage/quickstart#get-link) to download files.  
 
 
 ### 2. Change links
@@ -31,8 +31,8 @@ https://storage.yandexcloud.net/pashkov-sausage-store-static/6.jpg
 ![create-new-key](/Chapter7-lesson2/04.create-new-key.png)  
 
 ### 5. Install and start MinIO in Docker
-1. `docker pull minio/minio`  
-2. `docker-compose.yml`  
+5.1. `docker pull minio/minio`  
+5.2. `docker-compose.yml`  
 ```yaml
 version: '2.4'
 services:
@@ -49,7 +49,7 @@ services:
       - /home/student/minio/data:/data
     command: server --address ":9001" --console-address ":9000" /data
 ```
-3. Install direnv for secret vars  
+5.3. Install direnv for secret vars  
 ```bash
 sudo apt install direnv
 echo 'eval "$(direnv hook bash)"' >> ~/.bashrc
@@ -58,7 +58,7 @@ echo export MINIO_ROOT_USER=login_here > .envrc
 echo export MINIO_ROOT_PASSWORD=password_here >> .envrc
 direnv allow .
 ```
-4. Run docker compose  
+5.4. Run docker compose  
 `docker-compose up -d minio`  
 `docker logs minio_minio_1`
 ```console
@@ -74,7 +74,7 @@ Console: http://172.24.0.2:9000 http://127.0.0.1:9000
 Documentation: https://docs.min.io
 ```
 
-5. Go to browser  
+5.5. Go to browser  
 `http://51.250.67.183:9000`  
 and add a bucket and the service account.
 
