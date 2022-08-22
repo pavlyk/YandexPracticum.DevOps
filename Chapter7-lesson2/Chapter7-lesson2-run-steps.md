@@ -80,10 +80,10 @@ and add a bucket and the service account.
 
 
 ### 6. Install and configure rclone  
-1. Install:  
+6.1. Install:  
 **`curl https://rclone.org/install.sh | sudo bash`**  
 
-2. Configure rclone for YandexCloud Storage  
+6.2. Configure rclone for YandexCloud Storage  
 **`rclone config`**
 ```shell
 New remote> yandex-cloud
@@ -103,7 +103,6 @@ Name                 Type
 yandex-cloud         s3
 ```
 
-
 Which makes the config file look like this:  
 `cat ~/.config/rclone/rclone.conf`
 ```console
@@ -117,8 +116,7 @@ acl = private
 bucket_acl = private
 ```
 
-
-3. Config rclone for MinIO in Docker  
+6.3. Config rclone for MinIO in Docker  
 **`rclone config`**
 ```console
 New remote> docker-minio
@@ -161,8 +159,8 @@ endpoint = http://51.250.67.183:9001
 ```
 
 
-### 9. Copy and sync YandexCloud bucket and local MinIO bucket
-9.1. List buckets  
+### 7. Copy and sync YandexCloud bucket and local MinIO bucket
+7.1. List buckets  
 - `rclone lsd yandex-cloud:`  
 ```shell
   -1 2022-08-19 15:56:22        -1 pashkov-minio-sync
@@ -173,42 +171,42 @@ endpoint = http://51.250.67.183:9001
   -1 2022-08-21 21:48:03        -1 docker-minio
 ```
 
-9.2. List files in buckets  
+7.2. List files in buckets  
 ```bash
 rclone ls docker-minio:docker-minio
 rclone ls yandex-cloud:pashkov-minio-sync
 ```
 
-9.3. Copy files into yandexcloud bucket  
+7.3. Copy files into yandexcloud bucket  
 ```bash
 rclone copy docker-minio:docker-minio yandex-cloud:pashkov-minio-sync
 ```
 
-9.4. Copy files back from yandexcloud  
+7.4. Copy files back from yandexcloud  
 ```bash
 rclone copy yandex-cloud:pashkov-minio-sync docker-minio:docker-minio
 ```
 
-9.5. Sync files from local to cloud  
+7.5. Sync files from local to cloud  
 ```bash
 rclone -v --dry-run sync docker-minio:docker-minio yandex-cloud:pashkov-minio-sync
 rclone sync -v docker-minio:docker-minio yandex-cloud:pashkov-minio-sync
 ```
 
-9.6. Sync files from cloud to local  
+7.6. Sync files from cloud to local  
 ```bash
 rclone -v --dry-run sync yandex-cloud:pashkov-minio-sync docker-minio:docker-minio
 rclone sync -v yandex-cloud:pashkov-minio-sync docker-minio:docker-minio
 ```
 
-**10. Add sync task to cron**  
-10.1. `vi /home/student/minio/backup.sh`
+**8. Add sync task to cron**  
+8.1. `vi /home/student/minio/backup.sh`
 ```bash
 rclone sync -v --create-empty-src-dirs docker-minio:docker-minio yandex-cloud:pashkov-minio-sync
 ```
-10.2. `chmod +x /home/student/minio/backup.sh`  
+8.2. `chmod +x /home/student/minio/backup.sh`  
 
-10.3. `crontab -e`  
+8.3. `crontab -e`  
 ```bash
 29 * * * * /home/student/minio/backup.sh
 ```
