@@ -28,7 +28,10 @@ Root Token: myroot
 Development mode should NOT be used in production installations!
 ```
 
-### 3. Add secrets into Vault
+### 3. Add secrets in Vault
+3.1. Get into the docker container  
+`docker exec -it vault ash`  
+
 ```bash
 vault kv put secret/sausage-store spring.data.mongodb.uri=mongodb://sudmedru:strong_password@rc1b-k6kxnzzdzwda1z36.mdb.yandexcloud.net:27018/sudmedru?tls=true
 
@@ -38,6 +41,9 @@ vault kv put secret/sausage-store spring.datasource.url=jdbc:postgresql://rc1b-r
 
 vault kv put secret/sausage-store spring.datasource.username=sudmedru
 ```
+3.2. Or go to browser and add secrets through GUI  
+`http://51.250.67.183:8200/`  
+
 
 ### 4. Make changes to files as told in task
 - [backend/src/main/resources/application.properties](/Chapter7-lesson3/backend/src/main/resources/application.properties)
