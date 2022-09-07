@@ -1,0 +1,294 @@
+diff --git a/.gitlab-ci.yml b/.gitlab-ci.yml
+index c1ac376a583e50353302c7948d2e6dfd6ba18fcb..71b16b506fa6b03eaeb3f103b471ee55c62d88b2 100644
+--- a/.gitlab-ci.yml
++++ b/.gitlab-ci.yml
+@@ -9,8 +9,10 @@ frontend:
+       - "/frontend/.gitlab-ci.yml"
+     strategy: depend # depend нужен, если какой-нибудь дочерний пайплайн свалился, мы знали, что общий пайплайн тоже идёт с ошибкой
+   only:
+-    changes: # как только происходит изменение в папке frontend, запускается дочерний пайплайн, который лежит в этой папке
++    changes:
+       - frontend/**/*
++  except:
++    - schedules
+ 
+ backend:
+   stage: module-pipelines
+@@ -19,8 +21,10 @@ backend:
+       - "/backend/.gitlab-ci.yml"
+     strategy: depend
+   only:
+-    changes:  # как только происходит изменение в папке backend, запускается дочерний пайплайн, который лежит в этой папке
++    changes:
+       - backend/**/*
++  except:
++    - schedules
+ 
+ backend-report:
+   stage: module-pipelines
+@@ -29,8 +33,10 @@ backend-report:
+       - "/backend-report/.gitlab-ci.yml"
+     strategy: depend
+   only:
+-    changes:  # как только происходит изменение в папке backend-report, запускается дочерний пайплайн, который лежит в этой папке
++    changes:
+       - backend-report/**/*
++  except:
++    - schedules
+ 
+ deploy-vault:
+   stage: deploy
+@@ -43,31 +49,40 @@ deploy-vault:
+     - chmod 700 ~/.ssh
+     - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+     - chmod 644 ~/.ssh/known_hosts
++    - docker context create remote --docker "host=ssh://${DEV_USER}@${DEV_HOST}"
++    - docker --context remote login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+   script:
+-    - scp docker-compose.yml ${DEV_USER}@${DEV_HOST}:/home/${DEV_USER}/
+-    - ssh ${DEV_USER}@${DEV_HOST}
+-      "export "VERSION=${VERSION}";
+-       export "MONGO_VAULT=${MONGO_VAULT}";
+-       export "PSQL_DATASOURCE=${PSQL_DATASOURCE}";
+-       export "PSQL_USER=${PSQL_USER}";
+-       export "PSQL_PASSWORD=${PSQL_PASSWORD}";
+-       export "VAULT_TOKEN=${VAULT_TOKEN}";
+-       export "VAULT_URL=${VAULT_URL}";
+-       export "CI_REGISTRY_IMAGE=${CI_REGISTRY_IMAGE}";
+-       export "CI_REGISTRY=${CI_REGISTRY}";
+-       export "CI_REGISTRY_PASSWORD=${CI_REGISTRY_PASSWORD}";
+-       export "CI_REGISTRY_USER=${CI_REGISTRY_USER}";
+-      /bin/bash -s " < ./deploy.sh
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach vault
++    - docker -H ssh://${DEV_USER}@${DEV_HOST} exec -i -e "VAULT_TOKEN=${VAULT_TOKEN}" vault ash -c "vault kv put secret/sausage-store spring.data.mongodb.uri=${MONGO_VAULT} spring.datasource.username=${PSQL_USER} spring.datasource.password=${PSQL_PASSWORD} spring.datasource.url=${PSQL_DATASOURCE}"
+   rules:
+-    - if: '$CI_COMMIT_BRANCH == null'
++    - if: $CI_PIPELINE_SOURCE == "schedule"
+       when: never
+-    - if: '$CI_COMMIT_BRANCH != null'
+-      when: manual
++    - when: always
++
++deploy-certbot:
++  stage: deploy
++  image: alpine:3.15.0
++  before_script:
++    - apk add openssh-client bash docker docker-compose
++    - eval $(ssh-agent -s)
++    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
++    - mkdir -p ~/.ssh
++    - chmod 700 ~/.ssh
++    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
++    - chmod 644 ~/.ssh/known_hosts
++    - docker context create remote --docker "host=ssh://${DEV_USER}@${DEV_HOST}"
++  script:
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach certbot
++  rules:
++    - if: $CI_PIPELINE_SOURCE == "schedule"
+ 
+ slack-message:
+   stage: .post
+   script:
+     - echo "Send notify to Slack"
+     - >
+-      curl -X POST -H 'Content-type: application/json' --data '{"text":"Развернута новая версия сосисочной http://51.250.67.183."}' https://hooks.slack.com/services/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
+-  when: on_success
++      curl -X POST -H 'Content-type: application/json' --data '{"text":"Развернута новая версия сосисочной https://pashkov.hopto.org."}' https://hooks.slack.com/services/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
++  rules:
++    - if: $CI_PIPELINE_SOURCE == "schedule"
++      when: never
++    - when: on_success
+diff --git a/backend-report/.gitlab-ci.yml b/backend-report/.gitlab-ci.yml
+index 231ef9906b05cde6370c11b142aaa59fabce18a5..4d24aa65d75c2a6051b6a2b91923a02046d8863c 100644
+--- a/backend-report/.gitlab-ci.yml
++++ b/backend-report/.gitlab-ci.yml
+@@ -127,4 +127,3 @@ deploy-backend-report:
+     - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force backend-report
+     - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} pull backend-report
+     - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate backend-report
+- 
+diff --git a/backend/.gitlab-ci.yml b/backend/.gitlab-ci.yml
+index a37d4485f9dc9b103fb6d3d5fae8ce45440f5fb6..b9cdb262d4c3703c02b133fc9559d1ce00c83c62 100644
+--- a/backend/.gitlab-ci.yml
++++ b/backend/.gitlab-ci.yml
+@@ -123,4 +123,5 @@ deploy-backend:
+   script:
+     - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force backend
+     - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} pull backend
+-    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate backend
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate --scale backend=${BACKEND_REPLICAS} backend
++ 
+diff --git a/deploy.sh b/deploy.sh
+deleted file mode 100644
+index f3be822dac389ded33f3fed9d17789a2ae47b86a..0000000000000000000000000000000000000000
+--- a/deploy.sh
++++ /dev/null
+@@ -1,17 +0,0 @@
+-#!/bin/bash
+-set -e
+-VAULT_TOKEN=${VAULT_TOKEN}
+-PSQL_DATASOURCE=${PSQL_DATASOURCE}
+-PSQL_USER=${PSQL_USER}
+-PSQL_PASSWORD=${PSQL_PASSWORD}
+-MONGO_VAULT=${MONGO_VAULT}
+-
+-docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+-docker-compose rm --stop --force vault
+-docker-compose up --detach vault
+-
+-cat <<EOF | docker exec -i vault ash
+-  sleep 10;
+-  vault login ${VAULT_TOKEN};
+-  vault kv put secret/sausage-store spring.data.mongodb.uri="${MONGO_VAULT}" spring.datasource.username="${PSQL_USER}" spring.datasource.password="${PSQL_PASSWORD}" spring.datasource.url="${PSQL_DATASOURCE}";
+-EOF
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 197b9e3abe0f6967145d631020a0ab509a223be4..d0bdf0028563cb5cd5f4992526821f00839093cc 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -3,23 +3,26 @@ services:
+ 
+   backend:
+     image: $CI_REGISTRY_IMAGE/sausage-backend:latest
+-    container_name: backend
++#    container_name: backend
+     restart: always
+     environment:
+       VAULT_TOKEN: ${VAULT_TOKEN}
+       VAULT_URL: ${VAULT_URL}
+       REPORT_PATH: /app/log/reports
+       LOG_PATH: /app/log
++      VIRTUAL_HOST: "backend"
+     networks:
+       - sausage-store
+ 
+   backend-report:
+     image: $CI_REGISTRY_IMAGE/sausage-backend-report:latest
+-    container_name: sausage-store-backend-report
++    container_name: backend-report
+     restart: always
+     environment:
+       VAULT_TOKEN: ${VAULT_TOKEN}
+       VAULT_URL: ${VAULT_URL}
++    depends_on:
++      - vault
+     networks:
+       - sausage-store
+   
+@@ -29,8 +32,26 @@ services:
+     restart: always
+     ports:
+       - "80:80"
++      - "443:443"
++    volumes:
++      - /var/run/docker.sock:/tmp/docker.sock:ro
++      - web-root:/usr/share/nginx/html
++      - certbot-etc:/etc/letsencrypt
++      - certbot-var:/var/lib/letsencrypt
++    environment:
++      DEFAULT_HOST: "backend"
++      VIRTUAL_PORT: "8080"
+     networks:
+       - sausage-store
++  
++  certbot:
++    image: certbot/certbot:v1.29.0
++    container_name: certbot
++    volumes:
++      - web-root:/usr/share/nginx/html
++      - certbot-etc:/etc/letsencrypt
++      - certbot-var:/var/lib/letsencrypt
++    command: certonly --webroot --webroot-path=/usr/share/nginx/html --email ${CERTBOT_EMAIL} --agree-tos --no-eff-email --force-renewal -d ${CERTBOT_DOMAIN}
+ 
+   vault:
+     image: vault:1.11.2
+@@ -46,3 +67,8 @@ services:
+ 
+ networks:
+   sausage-store:
++
++volumes:
++  certbot-etc:
++  certbot-var:
++  web-root:
+diff --git a/frontend/.gitlab-ci.yml b/frontend/.gitlab-ci.yml
+index ec0069951b8471a2af2cb85b80328fefba0fa975..2988fe3a0782a4a5be516a018821378ceded07ec 100644
+--- a/frontend/.gitlab-ci.yml
++++ b/frontend/.gitlab-ci.yml
+@@ -61,6 +61,7 @@ dockerize-frontend:
+     - until docker info; do sleep 1; done
+     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+   script:
++    - cp -r sausage-store-${VERSION}/public_html frontend/
+     - cd frontend
+     - >
+       docker build
+diff --git a/frontend/Dockerfile b/frontend/Dockerfile
+index a3d14b60485cf437bef4f864cfba6ea1ab124d7e..060b2b8ade8e020cda2963ee0a933a9d4f711b7d 100644
+--- a/frontend/Dockerfile
++++ b/frontend/Dockerfile
+@@ -1,7 +1,10 @@
+-FROM node:14.17.3-alpine
++FROM node:14.17.3-alpine as builder
+ ARG VERSION=${VERSION}
+ WORKDIR /usr/src/app
+ COPY . .
+-RUN npm install && npm install -g http-server && npm run build
++RUN npm install && npm run build
++
++FROM nginxproxy/nginx-proxy
++COPY --from=builder /usr/src/app/dist/frontend /usr/share/nginx/html
++COPY --from=builder /usr/src/app/nginx.tmpl /app/nginx.tmpl
+ EXPOSE 80
+-ENTRYPOINT ["http-server", "dist/frontend/", "-p", "80", "--proxy", "http://backend:8080"]
+diff --git a/frontend/nginx.tmpl b/frontend/nginx.tmpl
+new file mode 100644
+index 0000000000000000000000000000000000000000..66f7aee99e309c79b211f4a2856214ecd0f8da5a
+--- /dev/null
++++ b/frontend/nginx.tmpl
+@@ -0,0 +1,46 @@
++{{ range $host, $containers := groupBy $ "Env.VIRTUAL_HOST" }}
++upstream {{ $host }} {
++{{ range $index, $value := $containers }}
++    {{ with $address := index $value.Addresses 0 }}
++    server {{ $value.Hostname }}:{{ $address.Port }};
++    {{ end }}
++{{ end }}
++}
++
++proxy_cache_path /etc/nginx/cache keys_zone=frontend:50m max_size=100m;
++
++server {
++  listen 80;
++  server_name pashkov.hopto.org;
++  return 301 https://$host$request_uri;
++}
++
++server {
++  listen 443 ssl http2;
++  listen [::]:443 ssl ipv6only=on;
++  server_name pashkov.hopto.org;
++  ssl_certificate /etc/letsencrypt/live/pashkov.hopto.org/fullchain.pem;
++  ssl_certificate_key /etc/letsencrypt/live/pashkov.hopto.org/privkey.pem;
++  add_header Strict-Transport-Security "max-age=63072000;";
++  ssl_protocols TLSv1.2 TLSv1.3;
++  ssl_prefer_server_ciphers on;
++  ssl_stapling on;
++  proxy_cache frontend;
++  proxy_cache_key $request_method$request_uri;
++  proxy_cache_min_uses 1;
++  proxy_cache_methods GET;
++  proxy_cache_valid 200 1y;
++  ssl_session_cache shared:SSL:50m;
++  ssl_session_timeout 10m;
++
++  location / {
++    root   /usr/share/nginx/html;
++    index  index.html;
++    try_files $uri $uri/ /index.html;
++  }
++  location /api {
++    proxy_pass http://{{ $host }};
++  }
++}
++
++{{ end }}
