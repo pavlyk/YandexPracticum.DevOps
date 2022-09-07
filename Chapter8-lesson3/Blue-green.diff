@@ -1,0 +1,133 @@
+diff --git a/backend/.gitlab-ci.yml b/backend/.gitlab-ci.yml
+index b9cdb262d4c3703c02b133fc9559d1ce00c83c62..9d33472a04c6c56bcb9ad984aed34daed68b7477 100644
+--- a/backend/.gitlab-ci.yml
++++ b/backend/.gitlab-ci.yml
+@@ -111,7 +111,7 @@ deploy-backend:
+   stage: deploy
+   image: alpine:3.15.0
+   before_script:
+-    - apk add openssh-client bash docker docker-compose
++    - apk update && apk add openssh-client bash docker docker-compose curl
+     - eval $(ssh-agent -s)
+     - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+     - mkdir -p ~/.ssh
+@@ -120,8 +120,22 @@ deploy-backend:
+     - chmod 644 ~/.ssh/known_hosts
+     - docker context create remote --docker "host=ssh://${DEV_USER}@${DEV_HOST}"
+     - docker --context remote login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
++    - docker -H ssh://${DEV_USER}@${DEV_HOST} ps
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} ps
+   script:
+-    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force backend
+-    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} pull backend
+-    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate --scale backend=${BACKEND_REPLICAS} backend
+- 
++    - if ! [ -z $(docker -H ssh://${DEV_USER}@${DEV_HOST} ps --quiet --filter name=sausage-store_backend-green_1) ]; then
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force backend-blue;
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} pull backend-blue;
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate --scale backend-blue=${BACKEND_REPLICAS} backend-blue;
++        until [ -z $(docker -H ssh://${DEV_USER}@${DEV_HOST} ps --quiet --filter name=sausage-store_backend-blue --filter health=healthy) ]; echo "Wait until backend-blue will be healthy..."; do sleep 10; done;
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force backend-green;
++      elif ! [ -z $(docker -H ssh://${DEV_USER}@${DEV_HOST} ps --quiet --filter name=sausage-store_backend-blue_1) ]; then
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force backend-green;
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} pull backend-green;
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate --scale backend-green=${BACKEND_REPLICAS} backend-green;
++        until [ -z $(docker -H ssh://${DEV_USER}@${DEV_HOST} ps --quiet --filter name=sausage-store_backend-green --filter health=healthy) ]; echo "Wait until backend-green will be healthy..."; do sleep 10; done;
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force backend-blue;
++      else
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} pull backend-blue;
++        docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate --scale backend-blue=${BACKEND_REPLICAS} backend-blue;
++      fi
+diff --git a/backend/Dockerfile b/backend/Dockerfile
+index 677e8cadd76bc5945453f43ba1f3fd438e5c086c..4c69d65232a9664dc7d62d464585d2d14e3a96ec 100644
+--- a/backend/Dockerfile
++++ b/backend/Dockerfile
+@@ -21,7 +21,7 @@ RUN keytool -importcert -file YandexInternalRootCA.crt \
+     && rm -rf YandexInternalRootCA.crt \
+     && addgroup --system jaruser \
+     && adduser -S -s /bin/false -G jaruser jaruser -D -H \
+-    && apk add --no-cache dumb-init==1.2.5-r0
++    && apk add --no-cache dumb-init==1.2.5-r0 curl
+ # create directory for reports
+ RUN mkdir -p ./log/reports
+ RUN chown -R jaruser:jaruser /app/log/reports
+diff --git a/backend/pom.xml b/backend/pom.xml
+index 122a91b4c9fe82d55cca3c40ab8843ca2af59ed4..6c15f12058019175221cdfaa51a00909b192bd88 100644
+--- a/backend/pom.xml
++++ b/backend/pom.xml
+@@ -105,7 +105,6 @@
+             <groupId>org.springframework.boot</groupId>
+             <artifactId>spring-boot-starter-log4j2</artifactId>
+         </dependency>
+-
+         <dependency>
+             <groupId>org.springframework.boot</groupId>
+             <artifactId>spring-boot-starter-test</artifactId>
+@@ -121,14 +120,16 @@
+             <artifactId>junit-vintage-engine</artifactId>
+             <scope>test</scope>
+         </dependency>
+-
+         <dependency>
+             <groupId>org.flywaydb</groupId>
+             <artifactId>flyway-core</artifactId>
+             <version>8.0.5</version>
+         </dependency>
++        <dependency>
++            <groupId>org.springframework.boot</groupId>
++            <artifactId>spring-boot-starter-actuator</artifactId>
++        </dependency>
+     </dependencies>
+-
+     <build>
+         <plugins>
+             <plugin>
+diff --git a/docker-compose.yml b/docker-compose.yml
+index d0bdf0028563cb5cd5f4992526821f00839093cc..1b405dee08595662a068ae818279685728163d67 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -1,9 +1,9 @@
+-version: "3.3"
++version: "3.8"
+ services:
+ 
+-  backend:
++  backend-blue:
+     image: $CI_REGISTRY_IMAGE/sausage-backend:latest
+-#    container_name: backend
++#    container_name: backend-blue
+     restart: always
+     environment:
+       VAULT_TOKEN: ${VAULT_TOKEN}
+@@ -11,6 +11,31 @@ services:
+       REPORT_PATH: /app/log/reports
+       LOG_PATH: /app/log
+       VIRTUAL_HOST: "backend"
++    healthcheck:
++      test: curl --fail -s http://localhost:8080/actuator/health
++      interval: 30s
++      start_period: 30s
++      timeout: 10s
++      retries: 5
++    networks:
++      - sausage-store
++
++  backend-green:
++    image: $CI_REGISTRY_IMAGE/sausage-backend:latest
++#    container_name: backend-green
++    restart: always
++    environment:
++      VAULT_TOKEN: ${VAULT_TOKEN}
++      VAULT_URL: ${VAULT_URL}
++      REPORT_PATH: /app/log/reports
++      LOG_PATH: /app/log
++      VIRTUAL_HOST: "backend"
++    healthcheck:
++      test: curl --fail -s http://localhost:8080/actuator/health
++      interval: 30s
++      start_period: 30s
++      timeout: 10s
++      retries: 5
+     networks:
+       - sausage-store
+ 
