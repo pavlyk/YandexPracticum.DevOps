@@ -1,0 +1,783 @@
+diff --git a/.gitlab-ci.yml b/.gitlab-ci.yml
+index aae7c854ec6310a9cbbab5d2b41b4ee61ecbfbff..c1ac376a583e50353302c7948d2e6dfd6ba18fcb 100644
+--- a/.gitlab-ci.yml
++++ b/.gitlab-ci.yml
+@@ -1,5 +1,6 @@
+ stages:
+   - module-pipelines
++  - deploy
+ 
+ frontend:
+   stage: module-pipelines
+@@ -20,3 +21,53 @@ backend:
+   only:
+     changes:  # как только происходит изменение в папке backend, запускается дочерний пайплайн, который лежит в этой папке
+       - backend/**/*
++
++backend-report:
++  stage: module-pipelines
++  trigger:
++    include:
++      - "/backend-report/.gitlab-ci.yml"
++    strategy: depend
++  only:
++    changes:  # как только происходит изменение в папке backend-report, запускается дочерний пайплайн, который лежит в этой папке
++      - backend-report/**/*
++
++deploy-vault:
++  stage: deploy
++  image: alpine:3.15.0
++  before_script:
++    - apk add openssh-client bash docker docker-compose
++    - eval $(ssh-agent -s)
++    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
++    - mkdir -p ~/.ssh
++    - chmod 700 ~/.ssh
++    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
++    - chmod 644 ~/.ssh/known_hosts
++  script:
++    - scp docker-compose.yml ${DEV_USER}@${DEV_HOST}:/home/${DEV_USER}/
++    - ssh ${DEV_USER}@${DEV_HOST}
++      "export "VERSION=${VERSION}";
++       export "MONGO_VAULT=${MONGO_VAULT}";
++       export "PSQL_DATASOURCE=${PSQL_DATASOURCE}";
++       export "PSQL_USER=${PSQL_USER}";
++       export "PSQL_PASSWORD=${PSQL_PASSWORD}";
++       export "VAULT_TOKEN=${VAULT_TOKEN}";
++       export "VAULT_URL=${VAULT_URL}";
++       export "CI_REGISTRY_IMAGE=${CI_REGISTRY_IMAGE}";
++       export "CI_REGISTRY=${CI_REGISTRY}";
++       export "CI_REGISTRY_PASSWORD=${CI_REGISTRY_PASSWORD}";
++       export "CI_REGISTRY_USER=${CI_REGISTRY_USER}";
++      /bin/bash -s " < ./deploy.sh
++  rules:
++    - if: '$CI_COMMIT_BRANCH == null'
++      when: never
++    - if: '$CI_COMMIT_BRANCH != null'
++      when: manual
++
++slack-message:
++  stage: .post
++  script:
++    - echo "Send notify to Slack"
++    - >
++      curl -X POST -H 'Content-type: application/json' --data '{"text":"Развернута новая версия сосисочной http://51.250.67.183."}' https://hooks.slack.com/services/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
++  when: on_success
+diff --git a/backend-report/.gitlab-ci.yml b/backend-report/.gitlab-ci.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..231ef9906b05cde6370c11b142aaa59fabce18a5
+--- /dev/null
++++ b/backend-report/.gitlab-ci.yml
+@@ -0,0 +1,130 @@
++variables:
++   SAST_JAVA_VERSION: 17
++   VERSION: 1.0.${CI_PIPELINE_ID}
++   MAVEN_REPO_PATH: ${CI_PROJECT_DIR}/.m2/repository
++   SAST_EXCLUDED_ANALYZERS: "nodejs-scan"
++
++include:
++  - template: Security/SAST.gitlab-ci.yml
++  - project: 'templates/ci'
++    file: 'DockerInDockerTemplate.yml'
++
++stages:
++   - build
++   - test
++   - dockerize
++   - release
++   - deploy
++
++build-code-job:
++  stage: build
++  script:
++    - echo "ARTIFACT_JOB_ID=${CI_JOB_ID}" > CI_JOB_ID.txt
++    - cd backend-report
++    - mvn package -Dversion.application=${VERSION} -DskipTests -Dmaven.repo.local=${MAVEN_REPO_PATH}
++    - cd .. 
++    - mkdir sausage-store-report-${VERSION}
++    - mv backend-report/target/sausage-store-report-${VERSION}.jar sausage-store-report-${VERSION}/sausage-store-report-${VERSION}.jar
++  artifacts:
++    paths:
++      - ${CI_PROJECT_DIR}/.m2/
++      - sausage-store-report-${VERSION}/sausage-store-report-${VERSION}.jar
++    reports:
++      dotenv: CI_JOB_ID.txt
++  rules:
++    - changes:
++      - backend-report/**/*
++
++spotbugs-sast:
++  dependencies:
++    - build-code-job
++  variables:
++    COMPILE: "false"
++
++sonar-scan-backend-report:
++  stage: test
++  image: maven:3.8-openjdk-16
++  cache:
++    key: ${CI_JOB_NAME}
++    paths:
++      - .sonar/cache
++  script:
++    - cd backend-report
++    - >
++      mvn verify sonar:sonar 
++      -Dversion.application=${VERSION} 
++      -Dsonar.qualitygate.wait=true 
++      -Dsonar.projectKey=${SONAR_PROJECT_KEY_BACK_REPORT}
++      -Dsonar.host.url=${SONARQUBE_URL}
++      -Dsonar.login=${SONAR_LOGIN}
++  rules:
++    - changes:
++      - backend-report/**/*
++  allow_failure: true
++  dependencies:
++    - build-code-job
++
++release:
++   stage: release
++   script:
++      - cd backend-report
++      - mvn deploy -DskipTests -Dversion.application=${VERSION} -Dmaven.repo.local=${MAVEN_REPO_PATH} -s settings.xml
++   rules:
++      - changes:
++           - backend-report/**/*
++   #allow_failure: true
++
++dockerize-backend-report:
++  stage: dockerize
++  image: docker:20.10.12-dind-rootless
++  before_script:
++    - until docker info; do sleep 1; done
++    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
++  script:
++    - cd backend-report
++    - >
++      docker build
++      --build-arg VERSION=$VERSION
++      --tag $CI_REGISTRY_IMAGE/sausage-backend-report:$CI_COMMIT_SHA
++      .
++    - docker push $CI_REGISTRY_IMAGE/sausage-backend-report:$CI_COMMIT_SHA
++  rules:
++    - changes:
++      - backend-report/**/*
++  dependencies:
++    - build-code-job
++
++upload-backend-report:
++  variables:
++    GIT_STRATEGY: none
++  image: docker:20.10.12-dind-rootless
++  stage: release
++  before_script:
++    - until docker info; do sleep 1; done
++    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
++  script:
++    - docker pull $CI_REGISTRY_IMAGE/sausage-backend-report:$CI_COMMIT_SHA
++    - docker tag $CI_REGISTRY_IMAGE/sausage-backend-report:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE/sausage-backend-report:latest
++    - docker push $CI_REGISTRY_IMAGE/sausage-backend-report:latest
++  rules:
++    - changes:
++      - backend-report/**/*
++
++deploy-backend-report:
++  stage: deploy
++  image: alpine:3.15.0
++  before_script:
++    - apk add openssh-client bash docker docker-compose
++    - eval $(ssh-agent -s)
++    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
++    - mkdir -p ~/.ssh
++    - chmod 700 ~/.ssh
++    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
++    - chmod 644 ~/.ssh/known_hosts
++    - docker context create remote --docker "host=ssh://${DEV_USER}@${DEV_HOST}"
++    - docker --context remote login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
++  script:
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force backend-report
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} pull backend-report
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate backend-report
++ 
+diff --git a/backend-report/Dockerfile b/backend-report/Dockerfile
+index b37a8f3d777a6032bd49cac124456ce43b7e3ec2..e6ec6caae42def59b8e7ec10397f584ed4ea472c 100644
+--- a/backend-report/Dockerfile
++++ b/backend-report/Dockerfile
+@@ -1,21 +1,15 @@
+ FROM maven:3.8-openjdk-16 as builder
+-#Create build directory
+-ARG VERSION
++ARG VERSION=${VERSION}
+ WORKDIR /usr/src/app
+ COPY . .
+ RUN mvn package -DskipTests -Dversion.application=${VERSION}
+ 
+ FROM openjdk:16
+-
+-ARG VERSION
+-#Create app directory
++ARG VERSION=${VERSION}
+ WORKDIR /usr/src/app
+-
+ RUN curl https://storage.yandexcloud.net/cloud-certs/CA.pem -o YandexInternalRootCA.crt && \
+     keytool -importcert -file YandexInternalRootCA.crt -alias yandex -cacerts -storepass changeit -noprompt && \
+     rm -f YandexInternalRootCA.crt
+-
+ COPY --from=builder /usr/src/app/target/sausage-store-report-${VERSION}.jar sausage-store-report.jar
+-
++EXPOSE 8081
+ ENTRYPOINT ["java", "-jar", "./sausage-store-report.jar", "--service.port=8081"]
+-EXPOSE 8081
+\ No newline at end of file
+diff --git a/backend-report/pom.xml b/backend-report/pom.xml
+index 4b625f7e694199ce2c19663083ce035c411fb8a2..cd3f9835cd5434878ff0622472adeda79132c83e 100644
+--- a/backend-report/pom.xml
++++ b/backend-report/pom.xml
+@@ -13,6 +13,15 @@
+     <version>${version.application}</version>
+     <name>sausage-store-report</name>
+     <description>Report for sausage-store</description>
++
++    <distributionManagement>
++        <repository>
++            <id>sausage-store-report</id>
++            <name>sausage-store-report</name>
++            <url>${env.NEXUS_REPO_URL}/sausage-store-pashkov-dmitriy-backend-report/</url>
++        </repository>
++    </distributionManagement>
++
+     <dependencyManagement>
+         <dependencies>
+             <dependency>
+@@ -100,6 +109,16 @@
+                 <groupId>org.springframework.boot</groupId>
+                 <artifactId>spring-boot-maven-plugin</artifactId>
+             </plugin>
++
++            <plugin>
++                <groupId>org.apache.maven.plugins</groupId>
++                <artifactId>maven-surefire-plugin</artifactId>
++                <version>2.19.1</version>
++                <configuration>
++                    <testFailureIgnore>true</testFailureIgnore>
++                </configuration>
++            </plugin>
++
+         </plugins>
+     </build>
+ 
+diff --git a/backend-report/settings.xml b/backend-report/settings.xml
+new file mode 100644
+index 0000000000000000000000000000000000000000..a3ec5674cba2585555aad8bf69cdba0aa0d7d19a
+--- /dev/null
++++ b/backend-report/settings.xml
+@@ -0,0 +1,10 @@
++  <settings xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.1.0 http://maven.apache.org/xsd/settings-1.1.0.xsd"
++      xmlns="http://maven.apache.org/SETTINGS/1.1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
++    <servers>
++      <server>
++        <id>sausage-store-report</id>
++        <username>${env.NEXUS_REPO_USER}</username>
++        <password>${env.NEXUS_REPO_PASS}</password>
++      </server>
++    </servers>
++  </settings>
+diff --git a/backend-report/src/main/java/com/yandex/practicum/devops/MongoSkipSSLConfig.java b/backend-report/src/main/java/com/yandex/practicum/devops/MongoSkipSSLConfig.java
+index 2033d965bbebfbcce2e57300ec2fb4276ca3b656..088684ef5038c3b26ba424f08ab83b21a9162648 100644
+--- a/backend-report/src/main/java/com/yandex/practicum/devops/MongoSkipSSLConfig.java
++++ b/backend-report/src/main/java/com/yandex/practicum/devops/MongoSkipSSLConfig.java
+@@ -45,7 +45,7 @@ public class MongoSkipSSLConfig {
+ 
+         SSLContext sc = null;
+         try {
+-            sc = SSLContext.getInstance("SSL");
++            sc = SSLContext.getInstance("TLSv1.2");
+         } catch (NoSuchAlgorithmException e) {
+             e.printStackTrace();
+             return null;
+diff --git a/backend-report/src/main/resources/application.properties b/backend-report/src/main/resources/application.properties
+index 9c9c21596f48c2d3c7274a45070e28f6074c8bfb..f7156aae26d52eae04192352844a02cde419578f 100644
+--- a/backend-report/src/main/resources/application.properties
++++ b/backend-report/src/main/resources/application.properties
+@@ -1,5 +1,12 @@
+ #server.port=0
+-#management.security.enabled=false
+-#spring.jpa.show-sql=false
+ #spring.data.mongodb.uri=mongodb://sausage_user:some_pass@rc1b-8c1wqecig1kl0mi4.mdb.yandexcloud.net:27018/sausagedb?tls=true
+-spring.data.mongodb.password
++#spring.data.mongodb.password
++
++spring.application.name=sausage-store
++management.security.enabled=false
++spring.jpa.show-sql=false
++spring.cloud.vault.token=${VAULT_TOKEN}
++spring.cloud.vault.host=${VAULT_URL}
++spring.cloud.vault.scheme=http
++spring.cloud.vault.kv.enabled=true
++spring.config.import=vault://secret/${spring.application.name}
+diff --git a/backend/.gitlab-ci.yml b/backend/.gitlab-ci.yml
+index 4963e597085ca7476b9bb44f32133909ebaec3ed..a37d4485f9dc9b103fb6d3d5fae8ce45440f5fb6 100644
+--- a/backend/.gitlab-ci.yml
++++ b/backend/.gitlab-ci.yml
+@@ -2,22 +2,20 @@ variables:
+    SAST_JAVA_VERSION: 17
+    VERSION: 1.0.${CI_PIPELINE_ID}
+    MAVEN_REPO_PATH: ${CI_PROJECT_DIR}/.m2/repository
+-
++   SAST_EXCLUDED_ANALYZERS: "nodejs-scan"
+ 
+ include:
+   - template: Security/SAST.gitlab-ci.yml
+   - project: 'templates/ci'
+     file: 'DockerInDockerTemplate.yml'
+ 
+-
+ stages:
+    - build
+-   - docker-build
+    - test
++   - dockerize
+    - release
+    - deploy
+ 
+-
+ build-backend-code-job:
+    stage: build
+    script:
+@@ -33,32 +31,10 @@ build-backend-code-job:
+       - sausage-store-${VERSION}/sausage-store-${VERSION}.jar 
+     reports:
+       dotenv: CI_JOB_ID.txt
+-   rules: # rules и only в данных случаях взаимозаменяемы
++   rules:
+       - changes:
+            - backend/**/*
+ 
+-
+-docker-build-backend:
+-  stage: docker-build
+-  image: docker:20.10.12-dind-rootless
+-  before_script:
+-    - until docker info; do sleep 1; done
+-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+-  script:
+-    - cd backend
+-    - >
+-      docker build
+-      --build-arg VERSION=$VERSION
+-      --tag $CI_REGISTRY_IMAGE/sausage-backend:$CI_COMMIT_SHA
+-      .
+-    - docker push $CI_REGISTRY_IMAGE/sausage-backend:$CI_COMMIT_SHA
+-  rules:
+-    - changes:
+-      - backend/**/*
+-  dependencies:
+-    - build-backend-code-job
+-
+-
+ spotbugs-sast:
+   stage: test
+   dependencies:
+@@ -66,10 +42,9 @@ spotbugs-sast:
+ #  variables:
+ #    COMPILE: "false"
+ 
+-
+ sonarqube-backend-sast:
+   stage: test
+-  image: maven:3.8-openjdk-16 # тот самый docker-образ, о котором мы все узнаем в будущем
++  image: maven:3.8-openjdk-16
+   cache:
+     key: ${CI_JOB_NAME}
+     paths:
+@@ -77,45 +52,37 @@ sonarqube-backend-sast:
+   script:
+     - cd backend
+     - >
+-      mvn verify sonar:sonar 
+-      -Dversion.application=${VERSION} 
+-      -Dsonar.qualitygate.wait=true 
++      mvn verify sonar:sonar
++      -Dversion.application=${VERSION}
++      -Dsonar.qualitygate.wait=true
+       -Dsonar.projectKey=${SONAR_PROJECT_KEY_BACK}
+       -Dsonar.host.url=${SONARQUBE_URL}
+       -Dsonar.login=${SONAR_LOGIN}
++  dependencies:
++    - build-backend-code-job
+   rules:
+     - changes:
+       - backend/**/*
+ 
+-
+-deploy-backend:
+-  stage: deploy
+-  image: alpine:3.15.0
+-  # если хотим сделать деплой по кнопке
+-  #rules:
+-  #  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+-  #    when: manual
+-  #  - if: '$CI_COMMIT_BRANCH == "master"'
+-  #    when: manual
++dockerize-backend:
++  stage: dockerize
++  image: docker:20.10.12-dind-rootless
+   before_script:
+-    - apk add openssh-client bash
+-    - eval $(ssh-agent -s)
+-    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+-    - mkdir -p ~/.ssh
+-    - chmod 700 ~/.ssh
+-    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+-    - chmod 644 ~/.ssh/known_hosts
++    - until docker info; do sleep 1; done
++    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+   script:
+-    - ssh ${DEV_USER}@${DEV_HOST}
+-      "export "VERSION=${VERSION}";
+-       export "VAULT_TOKEN=${VAULT_TOKEN}";
+-       export "VAULT_URL=${VAULT_URL}";
+-       export "CI_REGISTRY_IMAGE=${CI_REGISTRY_IMAGE}";
+-       export "CI_REGISTRY=${CI_REGISTRY}";
+-       export "CI_REGISTRY_PASSWORD=${CI_REGISTRY_PASSWORD}";
+-       export "CI_REGISTRY_USER=${CI_REGISTRY_USER}";
+-      /bin/bash -s " < ./backend/backend_deploy.sh 
+-      
++    - cd backend
++    - >
++      docker build
++      --build-arg VERSION=$VERSION
++      --tag $CI_REGISTRY_IMAGE/sausage-backend:$CI_COMMIT_SHA
++      .
++    - docker push $CI_REGISTRY_IMAGE/sausage-backend:$CI_COMMIT_SHA
++  rules:
++    - changes:
++      - backend/**/*
++  dependencies:
++    - build-backend-code-job
+ 
+ release:
+    stage: release
+@@ -127,7 +94,6 @@ release:
+            - backend/**/*
+    #allow_failure: true
+ 
+-
+ upload-backend-latest:
+   variables:
+     GIT_STRATEGY: none
+@@ -138,15 +104,23 @@ upload-backend-latest:
+     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+   script:
+     - docker pull $CI_REGISTRY_IMAGE/sausage-backend:$CI_COMMIT_SHA
+-    # если образ прошел проверки в CI (сканирование, тесты и т.д), то тегаем latest
+     - docker tag $CI_REGISTRY_IMAGE/sausage-backend:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE/sausage-backend:latest
+     - docker push $CI_REGISTRY_IMAGE/sausage-backend:latest
+ 
+-
+-slack-message: # уведомляем в Slack
+-  stage: .post
++deploy-backend:
++  stage: deploy
++  image: alpine:3.15.0
++  before_script:
++    - apk add openssh-client bash docker docker-compose
++    - eval $(ssh-agent -s)
++    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
++    - mkdir -p ~/.ssh
++    - chmod 700 ~/.ssh
++    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
++    - chmod 644 ~/.ssh/known_hosts
++    - docker context create remote --docker "host=ssh://${DEV_USER}@${DEV_HOST}"
++    - docker --context remote login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+   script:
+-    - echo "Send notify to Slack"
+-    - >
+-      curl -X POST -H 'Content-type: application/json' --data "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Вышла новая версия сосисочной - ${VERSION}.\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Backend: *<${NEXUS_REPO_URL}/sausage-store-pashkov-dmitriy-backend/com/yandex/practicum/devops/sausage-store/${VERSION}/sausage-store-${VERSION}.jar|Download :arrow-down:>*\"}},{\"type\":\"divider\"},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"<@U03FRG969C6>\"}]}]}" https://hooks.slack.com/services/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
+-  when: on_success
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force backend
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} pull backend
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate backend
+diff --git a/backend/backend_deploy.sh b/backend/backend_deploy.sh
+deleted file mode 100644
+index ce076657a184bd0018269e2f8b8db4fa56ee92e8..0000000000000000000000000000000000000000
+--- a/backend/backend_deploy.sh
++++ /dev/null
+@@ -1,22 +0,0 @@
+-#!/bin/bash
+-set +e
+-cat > .env <<EOF
+-VAULT_TOKEN=${VAULT_TOKEN}
+-VAULT_URL=${VAULT_URL}
+-REPORT_PATH=/app/log/reports
+-LOG_PATH=/app/log
+-EOF
+-
+-docker network create -d bridge sausage_network || true
+-docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+-docker pull $CI_REGISTRY_IMAGE/sausage-backend:latest
+-docker stop backend || true
+-docker rm backend || true
+-
+-set -e
+-docker run -d --name backend \
+-    --network=sausage_network \
+-    --restart always \
+-    --pull always \
+-    --env-file .env \
+-    $CI_REGISTRY_IMAGE/sausage-backend:latest
+diff --git a/deploy.sh b/deploy.sh
+new file mode 100644
+index 0000000000000000000000000000000000000000..f3be822dac389ded33f3fed9d17789a2ae47b86a
+--- /dev/null
++++ b/deploy.sh
+@@ -0,0 +1,17 @@
++#!/bin/bash
++set -e
++VAULT_TOKEN=${VAULT_TOKEN}
++PSQL_DATASOURCE=${PSQL_DATASOURCE}
++PSQL_USER=${PSQL_USER}
++PSQL_PASSWORD=${PSQL_PASSWORD}
++MONGO_VAULT=${MONGO_VAULT}
++
++docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
++docker-compose rm --stop --force vault
++docker-compose up --detach vault
++
++cat <<EOF | docker exec -i vault ash
++  sleep 10;
++  vault login ${VAULT_TOKEN};
++  vault kv put secret/sausage-store spring.data.mongodb.uri="${MONGO_VAULT}" spring.datasource.username="${PSQL_USER}" spring.datasource.password="${PSQL_PASSWORD}" spring.datasource.url="${PSQL_DATASOURCE}";
++EOF
+diff --git a/docker-compose.yml b/docker-compose.yml
+new file mode 100644
+index 0000000000000000000000000000000000000000..197b9e3abe0f6967145d631020a0ab509a223be4
+--- /dev/null
++++ b/docker-compose.yml
+@@ -0,0 +1,48 @@
++version: "3.3"
++services:
++
++  backend:
++    image: $CI_REGISTRY_IMAGE/sausage-backend:latest
++    container_name: backend
++    restart: always
++    environment:
++      VAULT_TOKEN: ${VAULT_TOKEN}
++      VAULT_URL: ${VAULT_URL}
++      REPORT_PATH: /app/log/reports
++      LOG_PATH: /app/log
++    networks:
++      - sausage-store
++
++  backend-report:
++    image: $CI_REGISTRY_IMAGE/sausage-backend-report:latest
++    container_name: sausage-store-backend-report
++    restart: always
++    environment:
++      VAULT_TOKEN: ${VAULT_TOKEN}
++      VAULT_URL: ${VAULT_URL}
++    networks:
++      - sausage-store
++  
++  frontend:
++    image: $CI_REGISTRY_IMAGE/sausage-frontend:latest
++    container_name: frontend
++    restart: always
++    ports:
++      - "80:80"
++    networks:
++      - sausage-store
++
++  vault:
++    image: vault:1.11.2
++    container_name: vault
++    environment:
++      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN}
++      VAULT_SERVER: "http://127.0.0.1:8200"
++      VAULT_ADDR: "http://127.0.0.1:8200"
++    ports:
++      - "8200:8200"
++    networks:
++      - sausage-store
++
++networks:
++  sausage-store:
+diff --git a/frontend/.gitlab-ci.yml b/frontend/.gitlab-ci.yml
+index bffe86a23bf7257589efb617693f990799239c2e..ec0069951b8471a2af2cb85b80328fefba0fa975 100644
+--- a/frontend/.gitlab-ci.yml
++++ b/frontend/.gitlab-ci.yml
+@@ -2,21 +2,18 @@ variables:
+   SAST_JAVA_VERSION: 17
+   VERSION: 1.0.${CI_PIPELINE_ID}
+ 
+-
+ include:
+   - template: Security/SAST.gitlab-ci.yml
+   - project: 'templates/ci'
+     file: 'DockerInDockerTemplate.yml'
+ 
+-
+ stages:
+    - build
+-   - docker-build
+    - test
++   - dockerize
+    - release
+    - deploy
+ 
+-
+ build-frontend-code-job:
+   stage: build
+   script:
+@@ -36,28 +33,6 @@ build-frontend-code-job:
+      changes:
+      - frontend/**/*
+ 
+-
+-docker-build-frontend:
+-  stage: docker-build
+-  image: docker:20.10.12-dind-rootless
+-  before_script:
+-    - until docker info; do sleep 1; done
+-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+-  script:
+-    - cd frontend
+-    - >
+-      docker build
+-      --build-arg VERSION=$VERSION
+-      --tag $CI_REGISTRY_IMAGE/sausage-frontend:$CI_COMMIT_SHA
+-      .
+-    - docker push $CI_REGISTRY_IMAGE/sausage-frontend:$CI_COMMIT_SHA
+-  rules:
+-    - changes:
+-      - frontend/**/*
+-  dependencies:
+-    - build-frontend-code-job
+-
+-
+ sonarqube-frontend-sast:
+   stage: test
+   image:
+@@ -79,37 +54,28 @@ sonarqube-frontend-sast:
+     - changes:
+       - frontend/**/*
+ 
+-
+-deploy-frontend:
+-  stage: deploy
+-  image: alpine:3.15.0
+-  # если хотим сделать деплой по кнопке
+-  #rules:
+-  #  - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+-  #    when: manual
+-  #  - if: '$CI_COMMIT_BRANCH == "master"'
+-  #    when: manual
++dockerize-frontend:
++  stage: dockerize
++  image: docker:20.10.12-dind-rootless
+   before_script:
+-    - apk add openssh-client bash
+-    - eval $(ssh-agent -s)
+-    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+-    - mkdir -p ~/.ssh
+-    - chmod 700 ~/.ssh
+-    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+-    - chmod 644 ~/.ssh/known_hosts
++    - until docker info; do sleep 1; done
++    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+   script:
+-    - ssh ${DEV_USER}@${DEV_HOST}
+-      "export "CI_REGISTRY_IMAGE=${CI_REGISTRY_IMAGE}";
+-       export "CI_REGISTRY=${CI_REGISTRY}";
+-       export "CI_REGISTRY_PASSWORD=${CI_REGISTRY_PASSWORD}";
+-       export "CI_REGISTRY_USER=${CI_REGISTRY_USER}";
+-      /bin/bash -s " < ./frontend/frontend_deploy.sh
+-
++    - cd frontend
++    - >
++      docker build
++      --build-arg VERSION=$VERSION
++      --tag $CI_REGISTRY_IMAGE/sausage-frontend:$CI_COMMIT_SHA
++      .
++    - docker push $CI_REGISTRY_IMAGE/sausage-frontend:$CI_COMMIT_SHA
++  rules:
++    - changes:
++      - frontend/**/*
++  dependencies:
++    - build-frontend-code-job
+ 
+ upload-frontend-release:
+   stage: release
+-  needs:
+-    - build-frontend-code-job
+   script:
+      - tar czvf sausage-store-${VERSION}.tar.gz sausage-store-${VERSION}
+      - >
+@@ -117,7 +83,8 @@ upload-frontend-release:
+   only:
+      changes:
+      - frontend/**/*
+-
++  dependencies:
++    - build-frontend-code-job
+ 
+ upload-frontend-latest:
+   variables:
+@@ -129,15 +96,26 @@ upload-frontend-latest:
+     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+   script:
+     - docker pull $CI_REGISTRY_IMAGE/sausage-frontend:$CI_COMMIT_SHA
+-    # если образ прошел проверки в CI (сканирование, тесты и т.д), то тегаем latest
+     - docker tag $CI_REGISTRY_IMAGE/sausage-frontend:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE/sausage-frontend:latest
+     - docker push $CI_REGISTRY_IMAGE/sausage-frontend:latest
++  rules:
++    - changes:
++      - frontend/**/*
+ 
+-
+-slack-message: # уведомляем в Slack
+-  stage: .post
++deploy-frontend:
++  stage: deploy
++  image: alpine:3.15.0
++  before_script:
++    - apk add openssh-client bash docker docker-compose
++    - eval $(ssh-agent -s)
++    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
++    - mkdir -p ~/.ssh
++    - chmod 700 ~/.ssh
++    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
++    - chmod 644 ~/.ssh/known_hosts
++    - docker context create remote --docker "host=ssh://${DEV_USER}@${DEV_HOST}"
++    - docker --context remote login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+   script:
+-    - echo "Send notify to Slack"
+-    - >
+-      curl -X POST -H 'Content-type: application/json' --data "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Вышла новая версия сосисочной - ${VERSION}.\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"Frontend: *<${NEXUS_REPO_URL}/sausage-store-pashkov-dmitriy-frontend/${VERSION}/sausage-store-${VERSION}.tar.gz|Download :arrow-down:>*\"}},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"<@U03FRG969C6>\"}]}]}" https://hooks.slack.com/services/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
+-  when: on_success
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} rm --stop --force frontend
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} pull frontend
++    - docker-compose -H ssh://${DEV_USER}@${DEV_HOST} up --detach --force-recreate frontend
+diff --git a/frontend/frontend_deploy.sh b/frontend/frontend_deploy.sh
+deleted file mode 100644
+index 9ee32a4155a9a81e77c088c83697dfbb07db758b..0000000000000000000000000000000000000000
+--- a/frontend/frontend_deploy.sh
++++ /dev/null
+@@ -1,16 +0,0 @@
+-#!/bin/bash
+-set +e
+-
+-docker network create -d bridge sausage_network || true
+-docker login -u ${CI_REGISTRY_USER} -p ${CI_REGISTRY_PASSWORD} ${CI_REGISTRY}
+-docker pull $CI_REGISTRY_IMAGE/sausage-frontend:latest
+-docker stop frontend || true
+-docker rm frontend || true
+-
+-set -e
+-docker run -d --name frontend \
+-    --network=sausage_network \
+-    --restart always \
+-    --pull always \
+-    -p 8080:80 \
+-    $CI_REGISTRY_IMAGE/sausage-frontend:latest
